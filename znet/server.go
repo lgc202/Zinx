@@ -15,9 +15,11 @@ type Server struct {
 	IP string
 	// 服务器监听的端口
 	Port int
+	// 当前的Server添加一个router， server注册的连接对应的处理业务
+	Router ziface.IRouter
 }
 
-func (s Server) Start() {
+func (s *Server) Start() {
 	fmt.Printf("[Start %s] Server Listening at IP: %s, Port: %d\n", s.Name, s.IP, s.Port)
 	go func() {
 		// 1. 获取一个TCP的Addr
@@ -45,7 +47,7 @@ func (s Server) Start() {
 				continue
 			}
 
-			dealConn := NewConnection(conn, connID, CallBackToClient)
+			dealConn := NewConnection(conn, connID, s.Router)
 			connID++
 			// 启动当前连接业务处理
 			go dealConn.Start()
@@ -53,12 +55,12 @@ func (s Server) Start() {
 	}()
 }
 
-func (s Server) Stop() {
+func (s *Server) Stop() {
 	//TODO implement me
 	panic("implement me")
 }
 
-func (s Server) Serve() {
+func (s *Server) Serve() {
 	// 启动server服务功能
 	s.Start()
 
@@ -68,6 +70,11 @@ func (s Server) Serve() {
 	select {}
 }
 
+func (s *Server) AddRouter(router ziface.IRouter) {
+	s.Router = router
+	fmt.Println("add router successful")
+}
+
 // NewServer 初始化server
 func NewServer(name string) ziface.IServer {
 	return &Server{
@@ -75,14 +82,6 @@ func NewServer(name string) ziface.IServer {
 		IPVersion: "tcp4",
 		IP:        "0.0.0.0",
 		Port:      8999,
+		Router:    nil,
 	}
-}
-
-// CallBackToClient 用来处理业务逻辑, 目前先写死， 后面应该由用户自己指定
-func CallBackToClient(conn *net.TCPConn, data []byte, cnt int) error {
-	fmt.Println("[Conn Handle] CallBackToClient...")
-	if _, err := conn.Write(data[:cnt]); err != nil {
-		return fmt.Errorf("CallBackToClient failed, err: %s", err.Error())
-	}
-	return nil
 }
