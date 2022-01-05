@@ -2,6 +2,7 @@ package znet
 
 import (
 	"fmt"
+	"github.com/lgc202/Zinx/utils"
 	"github.com/lgc202/Zinx/ziface"
 	"net"
 )
@@ -77,8 +78,7 @@ func (c *Connection) StartReader() {
 	defer c.Stop()
 
 	for {
-		// 读取客户端的数据到buf中， 目前最大是512字节
-		buf := make([]byte, 512)
+		buf := make([]byte, utils.GlobalObject.MaxPacketSize)
 		_, err := c.Conn.Read(buf)
 		if err != nil {
 			fmt.Printf("read data from client failed, err: %s\n", err.Error())
