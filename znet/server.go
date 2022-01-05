@@ -18,7 +18,7 @@ type Server struct {
 }
 
 func (s Server) Start() {
-	fmt.Printf("[Start] Server Listening at IP: %s, Port: %d\n", s.IP, s.Port)
+	fmt.Printf("[Start %s] Server Listening at IP: %s, Port: %d\n", s.Name, s.IP, s.Port)
 	go func() {
 		// 1. 获取一个TCP的Addr
 		addr, err := net.ResolveTCPAddr(s.IPVersion, fmt.Sprintf("%s:%d", s.IP, s.Port))
@@ -35,32 +35,20 @@ func (s Server) Start() {
 		}
 
 		fmt.Println("start Zinx server succ")
+		var connID uint32
 
 		// 3. 阻塞等待客户端连接， 处理读写请求
 		for {
-			conn, err := listener.Accept()
+			conn, err := listener.AcceptTCP()
 			if err != nil {
 				fmt.Printf("listen failed, err: %s", err.Error())
 				continue
 			}
 
-			// 已经与客户端建立连接， 做一些基本的回写业务
-			go func() {
-				for {
-					buf := make([]byte, 512)
-					cnt, err := conn.Read(buf)
-					if err != nil {
-						fmt.Printf("read data failed, err: %s\n", err.Error())
-						continue
-					}
-
-					// 回显功能
-					if _, err := conn.Write(buf[:cnt]); err != nil {
-						fmt.Printf("write failed, err: %s\n", err.Error())
-						continue
-					}
-				}
-			}()
+			dealConn := NewConnection(conn, connID, CallBackToClient)
+			connID++
+			// 启动当前连接业务处理
+			go dealConn.Start()
 		}
 	}()
 }
@@ -88,4 +76,13 @@ func NewServer(name string) ziface.IServer {
 		IP:        "0.0.0.0",
 		Port:      8999,
 	}
+}
+
+// CallBackToClient 用来处理业务逻辑, 目前先写死， 后面应该由用户自己指定
+func CallBackToClient(conn *net.TCPConn, data []byte, cnt int) error {
+	fmt.Println("[Conn Handle] CallBackToClient...")
+	if _, err := conn.Write(data[:cnt]); err != nil {
+		return fmt.Errorf("CallBackToClient failed, err: %s", err.Error())
+	}
+	return nil
 }
