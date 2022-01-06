@@ -24,6 +24,9 @@ func (s *Server) Start() {
 	fmt.Printf("[Zinx] Server Name: %s, IP: %s, Port: %d\n",
 		utils.GlobalObject.Name, utils.GlobalObject.Host, utils.GlobalObject.TCPPort)
 	go func() {
+		// 0. 启动work工作池机制
+		s.msgHandler.StartWorkerPool()
+
 		// 1. 获取一个TCP的Addr
 		addr, err := net.ResolveTCPAddr(s.IPVersion, fmt.Sprintf("%s:%d", s.IP, s.Port))
 		if err != nil {
