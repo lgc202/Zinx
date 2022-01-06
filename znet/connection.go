@@ -1,9 +1,10 @@
 package znet
 
 import (
+	"errors"
 	"fmt"
-	"github.com/lgc202/Zinx/utils"
 	"github.com/lgc202/Zinx/ziface"
+	"io"
 	"net"
 )
 
@@ -27,7 +28,15 @@ type Connection struct {
 func (c *Connection) Start() {
 	fmt.Println("Conn Start(), ConnID = ", c.ConnID)
 	// 启动从当前连接的读业务
-	c.StartReader()
+	go c.StartReader()
+
+	for {
+		select {
+		case <-c.ExitChan:
+			// 得到退出消息，不再阻塞
+			return
+		}
+	}
 	// TODO 启动从当前连接的写业务
 }
 
@@ -40,6 +49,9 @@ func (c *Connection) Stop() {
 	c.isClosed = true
 
 	c.Conn.Close()
+
+	// 通知从缓冲队列读数据的业务，该链接已经关闭
+	c.ExitChan <- true
 
 	// 回收资源
 	close(c.ExitChan)
@@ -57,9 +69,25 @@ func (c *Connection) RemoteAddr() net.Addr {
 	return c.Conn.RemoteAddr()
 }
 
-func (c *Connection) Send(bytes []byte) error {
-	//TODO implement me
-	panic("implement me")
+func (c *Connection) SendMsg(msgId uint32, data []byte) error {
+	if c.isClosed {
+		return errors.New("Connection closed when send msg")
+	}
+
+	dp := NewDataPack()
+	msg, err := dp.Pack(NewMsgPackage(msgId, data))
+	if err != nil {
+		fmt.Println("Pack error msg id = ", msgId)
+		return errors.New("pack error msg")
+	}
+
+	// 写回客户端
+	if _, err := c.Conn.Write(msg); err != nil {
+		fmt.Println("Write msg id ", msgId, " error ")
+		c.ExitChan <- true
+		return errors.New("conn Write error")
+	}
+	return nil
 }
 
 func NewConnection(conn *net.TCPConn, connID uint32, router ziface.IRouter) *Connection {
@@ -78,17 +106,39 @@ func (c *Connection) StartReader() {
 	defer c.Stop()
 
 	for {
-		buf := make([]byte, utils.GlobalObject.MaxPacketSize)
-		_, err := c.Conn.Read(buf)
-		if err != nil {
-			fmt.Printf("read data from client failed, err: %s\n", err.Error())
-			continue
+		dp := NewDataPack()
+		// 读取客户端的Msg head
+		headData := make([]byte, dp.GetHeadLen())
+		if _, err := io.ReadFull(c.GetTcpConnection(), headData); err != nil {
+			fmt.Println("read msg head failed, err ", err)
+			c.ExitChan <- true
+			return
 		}
 
-		// 得到当前连接数据的request
+		// 拆包，得到msgid 和 datalen 放在msg中
+		msg, err := dp.UnPack(headData)
+		if err != nil {
+			fmt.Println("unpack error ", err)
+			c.ExitChan <- true
+			return
+		}
+
+		// 根据 dataLen 读取 data，放在msg.Data中
+		var data []byte
+		if msg.GetDataLen() > 0 {
+			data = make([]byte, msg.GetDataLen())
+			if _, err := io.ReadFull(c.GetTcpConnection(), data); err != nil {
+				fmt.Println("read msg data error ", err)
+				c.ExitChan <- true
+				return
+			}
+		}
+		msg.SetData(data)
+
+		// 得到当前客户端请求的Request数据
 		req := Request{
 			conn: c,
-			data: buf,
+			msg:  msg,
 		}
 
 		// 从路由中,找到注册绑定的Conn对应的router调用
